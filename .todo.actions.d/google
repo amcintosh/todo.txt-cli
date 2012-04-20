@@ -157,7 +157,11 @@ def pull():
  
     for tasklist in tasklists["items"]:
         tasklistName = tasklist["title"]
-        tasks = service.tasks().list(tasklist=tasklist["id"]).execute()
+        tasks = service.tasks().list(tasklist=tasklist["id"]).execute() #Get all the Google-side tasks
+        service.tasks().clear(tasklist=tasklist["id"], body='').execute() #Clear list to prevent redundancy
+        
+        if 'items' not in tasks: #If there are no tasks in this list don't waste your time or cause errors
+            continue
 
         for task in tasks["items"]:
 
@@ -184,7 +188,7 @@ def pull():
                     pass
                 elif task["status"] == "completed" and foundInTodo>-1:
                     #Remove from todo.txt and add to done.txt
-                    call([os.environ.get("TODO_FULL_SH"),"do " + str(foundInTodo)])
+                    call([os.environ.get("TODO_FULL_SH"),"do",str(foundInTodo)])
                 elif task["status"] == "needsAction" and foundInDone>-1:
                     #Do nothing (changes need synced up, but not my problem)
                     pass
@@ -222,6 +226,8 @@ def push(filename):
         for tasklist in tasklists["items"]:
             tasklistName = tasklist["title"]
             tasks = service.tasks().list(tasklist=tasklist["id"]).execute()
+            if 'items' not in tasks:
+            	continue
             for task in tasks["items"]:
                 if task["title"].strip() and (task["title"].strip() in todo 
                                           or (todo[:1].lower()=="x" 
