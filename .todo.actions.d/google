@@ -177,7 +177,7 @@ def pull():
                     count+=1
                 count = 1
                 for item in dones:
-                    if task["title"].strip() in item:
+                    if re.sub("\([A-Z]\) ","",task["title"].strip(),1) in item:
                         foundInDone = count
                         break
                     count+=1            
