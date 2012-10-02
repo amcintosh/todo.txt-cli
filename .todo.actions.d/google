@@ -9,7 +9,9 @@ CLIENT_SECRET="YOUR_CLIENT_SECRET"
 USAGE:  
 	google [pull|push|push all]
 	
-CONFIGURATION:
+SETUP AND CONFIGURATION:
+	-Download and install the Python Google APIs Client Library 
+		(http://code.google.com/p/google-api-python-client)
 	-Create a project in the Google APIs Console (http://code.google.com/apis/console).
 	-Click "Services" and switch Tasks API to "On." 
 	-Click "API Access" then "Create an OAuth 2.0 client ID."
@@ -41,6 +43,7 @@ import sys
 import gflags
 import httplib2
 import datetime
+import re
 
 from apiclient.discovery import build
 from oauth2client.file import Storage
@@ -98,7 +101,7 @@ def addToTodo(task):
 def addToDone(task):
     """Format the google task and add it to todo done file"""
     date = datetime.datetime.strptime(task["completed"], "%Y-%m-%dT%H:%M:%S.%fZ")
-    todo = "x " + date.strftime("%Y-%m-%d") + " " + task["title"]
+    todo = "x " + date.strftime("%Y-%m-%d") + " " + re.sub("\([A-Z]\) ","",task["title"],1)
     call([os.environ.get("TODO_FULL_SH"),"addto","done.txt",todo])
 
 
@@ -162,18 +165,19 @@ def pull():
         for task in tasks["items"]:
 
             if task["title"].strip():
+
                 #Check for the task in the todo files
                 foundInTodo = -1
                 foundInDone = -1
                 count = 1
                 for item in todos:
-                    if task["title"] in item:
+                    if task["title"].strip() in item:
                         foundInTodo = count
                         break
                     count+=1
                 count = 1
                 for item in dones:
-                    if task["title"] in item:
+                    if task["title"].strip() in item:
                         foundInDone = count
                         break
                     count+=1            
