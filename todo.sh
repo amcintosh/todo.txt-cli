@@ -54,11 +54,11 @@ shorthelp()
 		    del|rm ITEM# [TERM]
 		    depri|dp ITEM#[, ITEM#, ITEM#, ...]
 		    do ITEM#[, ITEM#, ITEM#, ...]
-		    help
+		    help [ACTION...]
 		    list|ls [TERM...]
 		    listall|lsa [TERM...]
 		    listaddons
-		    listcon|lsc
+		    listcon|lsc [TERM...]
 		    listfile|lf [SRC [TERM...]]
 		    listpri|lsp [PRIORITIES] [TERM...]
 		    listproj|lsprj [TERM...]
@@ -81,7 +81,6 @@ shorthelp()
 
 		  See "help" for more details.
 	EndHelpFooter
-    exit 0
 }
 
 help()
@@ -154,6 +153,12 @@ help()
 
 
 	EndVerboseHelp
+        actionsHelp
+        addonHelp
+}
+
+actionsHelp()
+{
     cat <<-EndActionsHelp
 		  Built-in Actions:
 		    add "THING I NEED TO DO +project @context"
@@ -200,8 +205,9 @@ help()
 		    do ITEM#[, ITEM#, ITEM#, ...]
 		      Marks task(s) on line ITEM# as done in todo.txt.
 
-		    help
-		      Display this help message.
+		    help [ACTION...]
+		      Display help about usage, options, built-in and add-on actions,
+		      or just the usage help for the passed ACTION(s).
 
 		    list [TERM...]
 		    ls [TERM...]
@@ -223,9 +229,10 @@ help()
 		    listaddons
 		      Lists all added and overridden actions in the actions directory.
 
-		    listcon
-		    lsc
+		    listcon [TERM...]
+		    lsc [TERM...]
 		      Lists all the task contexts that start with the @ sign in todo.txt.
+		      If TERM specified, considers only tasks that contain TERM(s).
 
 		    listfile [SRC [TERM...]]
 		    lf [SRC [TERM...]]
@@ -245,10 +252,11 @@ help()
 		      Hides all tasks that contain TERM(s) preceded by a minus sign
 		      (i.e. -TERM).  
 
-		    listproj
-		    lsprj
+		    listproj [TERM...]
+		    lsprj [TERM...]
 		      Lists all the projects (terms that start with a + sign) in
 		      todo.txt.
+		      If TERM specified, considers only tasks that contain TERM(s).
 
 		    move ITEM# DEST [SRC]
 		    mv ITEM# DEST [SRC]
@@ -278,9 +286,6 @@ help()
 		      List the one-line usage of all built-in and add-on actions.
 
 	EndActionsHelp
-
-        addonHelp
-    exit 1
 }
 
 addonHelp()
@@ -302,6 +307,35 @@ addonHelp()
     fi
 }
 
+actionUsage()
+{
+    for actionName
+    do
+        action="${TODO_ACTIONS_DIR}/${actionName}"
+        if [ -f "$action" -a -x "$action" ]; then
+            "$action" usage
+        else
+            builtinActionUsage=$(actionsHelp | sed -n -e "/^    ${actionName//\//\\/} /,/^\$/p" -e "/^    ${actionName//\//\\/}$/,/^\$/p")
+            if [ "$builtinActionUsage" ]; then
+                echo "$builtinActionUsage"
+                echo
+            else
+                die "TODO: No action \"${actionName}\" exists."
+            fi
+        fi
+    done
+}
+
+dieWithHelp()
+{
+    case "$1" in
+        help)       help;;
+        shorthelp)  shorthelp;;
+    esac
+    shift
+
+    die "$@"
+}
 die()
 {
     echo "$*"
@@ -389,21 +423,22 @@ replaceOrPrepend()
   else
     input=$*
   fi
-  cleaninput "for sed"
 
   # Retrieve existing priority and prepended date
-  priority=$(sed -e "$item!d" -e $item's/^\((.) \)\{0,1\}\([0-9]\{2,4\}-[0-9]\{2\}-[0-9]\{2\} \)\{0,1\}.*/\1/' "$TODO_FILE")
-  prepdate=$(sed -e "$item!d" -e $item's/^\((.) \)\{0,1\}\([0-9]\{2,4\}-[0-9]\{2\}-[0-9]\{2\} \)\{0,1\}.*/\2/' "$TODO_FILE")
+  local -r priAndDateExpr='^\((.) \)\{0,1\}\([0-9]\{2,4\}-[0-9]\{2\}-[0-9]\{2\} \)\{0,1\}'
+  priority=$(sed -e "$item!d" -e "${item}s/${priAndDateExpr}.*/\\1/" "$TODO_FILE")
+  prepdate=$(sed -e "$item!d" -e "${item}s/${priAndDateExpr}.*/\\2/" "$TODO_FILE")
 
-  if [ "$prepdate" -a "$action" = "replace" ] && [ "$(echo "$input"|sed -e 's/^\([0-9]\{2,4\}-[0-9]\{2\}-[0-9]\{2\}\)\{0,1\}.*/\1/')" ]; then
-    # If the replaced text starts with a date, it will replace the existing
-    # date, too.
+  if [ "$prepdate" -a "$action" = "replace" ] && [ "$(echo "$input"|sed -e "s/${priAndDateExpr}.*/\\1\\2/")" ]; then
+      # If the replaced text starts with a [priority +] date, it will replace
+      # the existing date, too.
     prepdate=
   fi
 
   # Temporarily remove any existing priority and prepended date, perform the
   # change (replace/prepend) and re-insert the existing priority and prepended
   # date again.
+  cleaninput "for sed"
   sed -i.bak -e "$item s/^${priority}${prepdate}//" -e "$item s|^.*|${priority}${prepdate}${input}${backref}|" "$TODO_FILE"
   if [ $TODOTXT_VERBOSE -gt 0 ]; then
     getNewtodo "$item"
@@ -488,6 +523,7 @@ do
         # Cannot just invoke shorthelp() because we need the configuration
         # processed to locate the add-on actions directory.
         set -- '-h' 'shorthelp'
+        OPTIND=2
         ;;
     n )
         OVR_TODOTXT_PRESERVE_LINE_NUMBERS=0
@@ -628,7 +664,7 @@ fi
 }
 
 # === SANITY CHECKS (thanks Karl!) ===
-[ -r "$TODOTXT_CFG_FILE" ] || die "Fatal Error: Cannot read configuration file $TODOTXT_CFG_FILE"
+[ -r "$TODOTXT_CFG_FILE" ] || dieWithHelp "$1" "Fatal Error: Cannot read configuration file $TODOTXT_CFG_FILE"
 
 . "$TODOTXT_CFG_FILE"
 
@@ -667,8 +703,8 @@ fi
 ACTION=${1:-$TODOTXT_DEFAULT_ACTION}
 
 [ -z "$ACTION" ]    && usage
-[ -d "$TODO_DIR" ]  || die "Fatal Error: $TODO_DIR is not a directory"
-( cd "$TODO_DIR" )  || die "Fatal Error: Unable to cd to $TODO_DIR"
+[ -d "$TODO_DIR" ]  || dieWithHelp "$1" "Fatal Error: $TODO_DIR is not a directory"
+( cd "$TODO_DIR" )  || dieWithHelp "$1" "Fatal Error: Unable to cd to $TODO_DIR"
 
 [ -f "$TODO_FILE" ] || cp /dev/null "$TODO_FILE"
 [ -f "$DONE_FILE" ] || cp /dev/null "$DONE_FILE"
@@ -858,7 +894,17 @@ _format()
     fi
 }
 
-export -f cleaninput getPrefix getTodo getNewtodo shellquote filtercommand _list getPadding _format die
+listWordsWithSigil()
+{
+    sigil=$1
+    shift
+
+    FILE=$TODO_FILE
+    [ "$TODOTXT_SOURCEVAR" ] && eval "FILE=$TODOTXT_SOURCEVAR"
+    eval "$(filtercommand 'cat "${FILE[@]}"' '' "$@")" | grep -o "[^ ]*${sigil}[^ ]\\+" | grep "^$sigil" | sort -u
+}
+
+export -f cleaninput getPrefix getTodo getNewtodo shellquote filtercommand _list listWordsWithSigil getPadding _format die
 
 # == HANDLE ACTION ==
 action=$( printf "%s\n" "$ACTION" | tr 'A-Z' 'a-z' )
@@ -1075,13 +1121,19 @@ case $action in
     ;;
 
 "help" )
-    if [ -t 1 ] ; then # STDOUT is a TTY
-        if which "${PAGER:-less}" >/dev/null 2>&1; then
-            # we have a working PAGER (or less as a default)
-            help | "${PAGER:-less}" && exit 0
+    shift  ## Was help; new $1 is first help topic / action name
+    if [ $# -gt 0 ]; then
+        # Don't use PAGER here; we don't expect much usage output from one / few actions.
+        actionUsage "$@"
+    else
+        if [ -t 1 ] ; then # STDOUT is a TTY
+            if which "${PAGER:-less}" >/dev/null 2>&1; then
+                # we have a working PAGER (or less as a default)
+                help | "${PAGER:-less}" && exit 0
+            fi
         fi
+        help # just in case something failed above, we go ahead and just spew to STDOUT
     fi
-    help # just in case something failed above, we go ahead and just spew to STDOUT
     ;;
 
 "shorthelp" )
@@ -1105,7 +1157,7 @@ case $action in
     TOTAL=$( sed -n '$ =' "$TODO_FILE" )
     PADDING=${#TOTAL}
 
-    post_filter_command="awk -v TOTAL=$TOTAL -v PADDING=$PADDING '{ \$1 = sprintf(\"%\" PADDING \"d\", (\$1 > TOTAL ? 0 : \$1)); print }' "
+    post_filter_command="${post_filter_command:-}${post_filter_command:+ | }awk -v TOTAL=$TOTAL -v PADDING=$PADDING '{ \$1 = sprintf(\"%\" PADDING \"d\", (\$1 > TOTAL ? 0 : \$1)); print }' "
     cat "$TODO_FILE" "$DONE_FILE" | TODOTXT_VERBOSE=0 _format '' "$PADDING" "$@"
 
     if [ $TODOTXT_VERBOSE -gt 0 ]; then
@@ -1133,23 +1185,20 @@ case $action in
     ;;
 
 "listcon" | "lsc" )
-    FILE=$TODO_FILE
-    [ "$TODOTXT_SOURCEVAR" ] && eval "FILE=$TODOTXT_SOURCEVAR"
-    grep -ho '[^ ]*@[^ ]\+' "${FILE[@]}" | grep '^@' | sort -u
+    shift
+    listWordsWithSigil '@' "$@"
     ;;
 
 "listproj" | "lsprj" )
-    FILE=$TODO_FILE
-    [ "$TODOTXT_SOURCEVAR" ] && eval "FILE=$TODOTXT_SOURCEVAR"
     shift
-    eval "$(filtercommand 'cat "${FILE[@]}"' '' "$@")" | grep -o '[^ ]*+[^ ]\+' | grep '^+' | sort -u
+    listWordsWithSigil '+' "$@"
     ;;
 
 "listpri" | "lsp" )
     shift ## was "listpri", new $1 is priority to list or first TERM
 
     pri=$(printf "%s\n" "$1" | tr 'a-z' 'A-Z' | grep -e '^[A-Z]$' -e '^[A-Z]-[A-Z]$') && shift || pri="A-Z"
-    post_filter_command="grep '^ *[0-9]\+ ([${pri}]) '"
+    post_filter_command="${post_filter_command:-}${post_filter_command:+ | }grep '^ *[0-9]\+ ([${pri}]) '"
     _list "$TODO_FILE" "$@"
     ;;
 
