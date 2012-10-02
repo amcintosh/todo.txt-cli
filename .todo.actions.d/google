@@ -184,7 +184,7 @@ def pull():
                     pass
                 elif task["status"] == "completed" and foundInTodo>-1:
                     #Remove from todo.txt and add to done.txt
-                    call([os.environ.get("TODO_FULL_SH"),"do " + str(foundInTodo)])
+                    call([os.environ.get("TODO_FULL_SH"),"do",str(foundInTodo)])
                 elif task["status"] == "needsAction" and foundInDone>-1:
                     #Do nothing (changes need synced up, but not my problem)
                     pass
