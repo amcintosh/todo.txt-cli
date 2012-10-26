@@ -44,6 +44,7 @@ import gflags
 import httplib2
 import datetime
 import re
+import codecs
 
 from apiclient.discovery import build
 from oauth2client.file import Storage
@@ -142,8 +143,10 @@ def pull():
     tasklists = service.tasklists().list().execute()
     call([os.environ.get("TODO_FULL_SH"),"archive"])
     try:
-        todoFile = open(os.environ.get("TODO_DIR")+"/todo.txt", "r")
-        doneFile = open(os.environ.get("TODO_DIR")+"/done.txt", "r") 
+        todoFile = codecs.open(os.environ.get("TODO_DIR")+"/todo.txt", "r",
+                encoding='utf-8')
+        doneFile = codecs.open(os.environ.get("TODO_DIR")+"/done.txt", "r",
+                encoding='utf-8') 
 
         todos = []
         dones = []
@@ -210,7 +213,8 @@ def push(filename):
     call([os.environ.get("TODO_FULL_SH"),"archive"])
 
     try:
-        todoFile = open(os.environ.get("TODO_DIR")+"/"+filename+".txt", "r")
+        todoFile = codecs.open(os.environ.get("TODO_DIR")+"/"+filename+".txt", "r",
+                encoding='utf-8')
     
         todos = []
         for line in todoFile:
