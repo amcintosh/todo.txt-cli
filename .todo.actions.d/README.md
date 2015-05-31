@@ -17,9 +17,15 @@ $ todo.sh google push all   #push todo and done items to Google
 - Enter the Google-provided Client ID and Client Secret in the variables at the start of the addon script.	
 
 ### Install Dependencies
+```bash
+$ cd ~/.todo.actions.d
+$ pip install -r requirements.txt
+```
 
+Alternatively,
 ```bash
 $ pip install google-api-python-client
+$ pip install python-gflags
 ```
 or manually install from https://developers.google.com/api-client-library/python/
 
