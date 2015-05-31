@@ -241,7 +241,6 @@ def push(filename):
             # tasklistName = tasklist["title"]
             tasks = service.tasks().list(tasklist=tasklist["id"]).execute()
             for task in tasks["items"]:
-                print task["title"]
                 if task["title"].strip() and \
                     (task["title"].strip() in todo
                         or (todo[:1].lower() == "x"
