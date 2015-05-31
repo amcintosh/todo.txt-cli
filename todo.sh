@@ -302,6 +302,14 @@ addonHelp()
                     didPrintAddonActionsHeader=1
                 fi
                 "$action" usage
+            elif [ -d "$action" -a -x "$action/$(basename $action)" ]; then
+                if [ ! "$didPrintAddonActionsHeader" ]; then
+                    cat <<-EndAddonActionsHeader
+		  Add-on Actions:
+	EndAddonActionsHeader
+                    didPrintAddonActionsHeader=1
+                fi
+                "$action/$(basename $action)" usage
             fi
         done
     fi
@@ -314,6 +322,8 @@ actionUsage()
         action="${TODO_ACTIONS_DIR}/${actionName}"
         if [ -f "$action" -a -x "$action" ]; then
             "$action" usage
+        elif [ -d "$action" -a -x "$action/$(basename $action)" ]; then
+            "$action/$(basename $action)" usage
         else
             builtinActionUsage=$(actionsHelp | sed -n -e "/^    ${actionName//\//\\/} /,/^\$/p" -e "/^    ${actionName//\//\\/}$/,/^\$/p")
             if [ "$builtinActionUsage" ]; then
@@ -467,6 +477,9 @@ OVR_TODOTXT_DEFAULT_ACTION="$TODOTXT_DEFAULT_ACTION"
 OVR_TODOTXT_SORT_COMMAND="$TODOTXT_SORT_COMMAND"
 OVR_TODOTXT_FINAL_FILTER="$TODOTXT_FINAL_FILTER"
 
+# Prevent GREP_OPTIONS from malforming grep's output
+GREP_OPTIONS=""
+
 # == PROCESS OPTIONS ==
 while getopts ":fhpcnNaAtTvVx+@Pd:" Option
 do
@@ -581,6 +594,7 @@ TODOTXT_DEFAULT_ACTION=${TODOTXT_DEFAULT_ACTION:-}
 TODOTXT_SORT_COMMAND=${TODOTXT_SORT_COMMAND:-env LC_COLLATE=C sort -f -k2}
 TODOTXT_DISABLE_FILTER=${TODOTXT_DISABLE_FILTER:-}
 TODOTXT_FINAL_FILTER=${TODOTXT_FINAL_FILTER:-cat}
+TODOTXT_GLOBAL_CFG_FILE=${TODOTXT_GLOBAL_CFG_FILE:-/etc/todo/config}
 
 # Export all TODOTXT_* variables
 export ${!TODOTXT_@}
@@ -611,6 +625,10 @@ export PRI_B=$GREEN         # color for B priority
 export PRI_C=$LIGHT_BLUE    # color for C priority
 export PRI_X=$WHITE         # color unless explicitly defined
 
+# Default project and context colors.
+export COLOR_PROJECT=$NONE
+export COLOR_CONTEXT=$NONE
+
 # Default highlight colors.
 export COLOR_DONE=$LIGHT_GREY   # color for done (but not yet archived) tasks
 
@@ -640,6 +658,15 @@ export SENTENCE_DELIMITERS=',.:;'
 
 [ -e "$TODOTXT_CFG_FILE" ] || {
     CFG_FILE_ALT=$(dirname "$0")"/todo.cfg"
+
+    if [ -e "$CFG_FILE_ALT" ]
+    then
+        TODOTXT_CFG_FILE="$CFG_FILE_ALT"
+    fi
+}
+
+[ -e "$TODOTXT_CFG_FILE" ] || {
+    CFG_FILE_ALT="$TODOTXT_GLOBAL_CFG_FILE"
 
     if [ -e "$CFG_FILE_ALT" ]
     then
@@ -703,12 +730,12 @@ fi
 ACTION=${1:-$TODOTXT_DEFAULT_ACTION}
 
 [ -z "$ACTION" ]    && usage
-[ -d "$TODO_DIR" ]  || dieWithHelp "$1" "Fatal Error: $TODO_DIR is not a directory"
+[ -d "$TODO_DIR" ]  || mkdir -p $TODO_DIR 2> /dev/null || dieWithHelp "$1" "Fatal Error: $TODO_DIR is not a directory"
 ( cd "$TODO_DIR" )  || dieWithHelp "$1" "Fatal Error: Unable to cd to $TODO_DIR"
 
-[ -f "$TODO_FILE" ] || cp /dev/null "$TODO_FILE"
-[ -f "$DONE_FILE" ] || cp /dev/null "$DONE_FILE"
-[ -f "$REPORT_FILE" ] || cp /dev/null "$REPORT_FILE"
+[ -f "$TODO_FILE" -o -c "$TODO_FILE" ] || > "$TODO_FILE"
+[ -f "$DONE_FILE" -o -c "$DONE_FILE" ] || > "$DONE_FILE"
+[ -f "$REPORT_FILE" -o -c "$REPORT_FILE" ] || > "$REPORT_FILE"
 
 if [ $TODOTXT_PLAIN = 1 ]; then
     for clr in ${!PRI_@}; do
@@ -717,7 +744,12 @@ if [ $TODOTXT_PLAIN = 1 ]; then
     PRI_X=$NONE
     DEFAULT=$NONE
     COLOR_DONE=$NONE
+    COLOR_PROJECT=$NONE
+    COLOR_CONTEXT=$NONE
 fi
+
+[[ "$HIDE_PROJECTS_SUBSTITUTION" ]] && COLOR_PROJECT="$NONE"
+[[ "$HIDE_CONTEXTS_SUBSTITUTION" ]] && COLOR_CONTEXT="$NONE"
 
 _addto() {
     file="$1"
@@ -865,15 +897,38 @@ _format()
                 return color
             }
             {
+                clr = ""
                 if (match($0, /^[0-9]+ x /)) {
-                    print highlight("COLOR_DONE") $0 highlight("DEFAULT")
+                    clr = highlight("COLOR_DONE")
                 } else if (match($0, /^[0-9]+ \([A-Z]\) /)) {
                     clr = highlight("PRI_" substr($0, RSTART + RLENGTH - 3, 1))
-                    print \
-                        (clr ? clr : highlight("PRI_X")) \
-                        (ENVIRON["HIDE_PRIORITY_SUBSTITUTION"] == "" ? $0 : substr($0, 1, RLENGTH - 4) substr($0, RSTART + RLENGTH)) \
-                        highlight("DEFAULT")
-                } else { print }
+                    clr = (clr ? clr : highlight("PRI_X"))
+                    if (ENVIRON["HIDE_PRIORITY_SUBSTITUTION"] != "") {
+                        $0 = substr($0, 1, RLENGTH - 4) substr($0, RSTART + RLENGTH)
+                    }
+                }
+                end_clr = (clr ? highlight("DEFAULT") : "")
+
+                prj_beg = highlight("COLOR_PROJECT")
+                prj_end = (prj_beg ? (highlight("DEFAULT") clr) : "")
+
+                ctx_beg = highlight("COLOR_CONTEXT")
+                ctx_end = (ctx_beg ? (highlight("DEFAULT") clr) : "")
+
+                gsub(/[ \t][ \t]*/, "\n&\n")
+                len = split($0, words, /\n/)
+
+                printf "%s", clr
+                for (i = 1; i <= len; ++i) {
+                    if (words[i] ~ /^[+].*[A-Za-z0-9_]$/) {
+                        printf "%s", prj_beg words[i] prj_end
+                    } else if (words[i] ~ /^[@].*[A-Za-z0-9_]$/) {
+                        printf "%s", ctx_beg words[i] ctx_end
+                    } else {
+                        printf "%s", words[i]
+                    }
+                }
+                printf "%s\n", end_clr
             }
           '''  \
         | sed '''
@@ -919,6 +974,10 @@ then
     shift
     ## Reset action to new first argument
     action=$( printf "%s\n" "$1" | tr 'A-Z' 'a-z' )
+elif [ -d "$TODO_ACTIONS_DIR/$action" -a -x "$TODO_ACTIONS_DIR/$action/$action" ]
+then
+    "$TODO_ACTIONS_DIR/$action/$action" "$@"
+    exit $?
 elif [ -d "$TODO_ACTIONS_DIR" -a -x "$TODO_ACTIONS_DIR/$action" ]
 then
     "$TODO_ACTIONS_DIR/$action" "$@"
@@ -1359,6 +1418,8 @@ note: PRIORITY must be anywhere from A to Z."
         for action in *
         do
             if [ -f "$action" -a -x "$action" ]; then
+                echo "$action"
+            elif [ -d "$action" -a -x "$action/$action" ]; then
                 echo "$action"
             fi
         done
