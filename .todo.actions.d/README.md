@@ -8,6 +8,7 @@ $ todo.sh google push all   #push todo and done items to Google
 </code></pre>
 
 # Installation
+- Install Python 2. (This addon currently does NOT work with Python 3.)
 - Download the addon script and put into your todo.actions.d folder
 
 ### Enable Google API Access
